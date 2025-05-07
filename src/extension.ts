@@ -29,7 +29,7 @@ export function activate(context: vscode.ExtensionContext) {
     try {
       const currentBranch = await execGitCommand("git symbolic-ref --short HEAD", workspaceFolder);
     } catch {
-      vscode.window.showErrorMessage("Maybe in detached State, please checkout to a branch");
+      vscode.window.showErrorMessage("You are maybe in detached State, please checkout to a branch");
       return;
     }
     
