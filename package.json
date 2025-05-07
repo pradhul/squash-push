@@ -2,7 +2,7 @@
   "name": "squash-push",
   "displayName": "squash&push",
   "description": "squash the commits in local to be able to push it as a single commit",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "engines": {
     "vscode": "^1.98.0"
   },
