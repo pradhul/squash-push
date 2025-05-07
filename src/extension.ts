@@ -1,6 +1,16 @@
 import * as vscode from "vscode";
 import { exec } from "child_process";
 
+/**
+ * Object containing Git command templates used throughout the extension.
+ * 
+ * @property {string} CURRENT_BRANCH - Command to get the current branch name
+ * @property {Function} UPSTREAM_BRANCH - Function that returns command to get upstream branch
+ * @property {string} LOCAL_COMMITS - Command to get all commit logs
+ * @property {Function} LOCAL_COMMITS_TRACKING - Function that returns command to get commits between branches
+ * @property {Function} SQUASH_AND_COMMIT - Function that returns command to squash commits
+ * @property {Function} HAS_A_PARENT - Function that returns command to check if a commit has a parent
+ */
 const GIT_COMMANDS = {
   CURRENT_BRANCH: "git symbolic-ref --short HEAD",
   UPSTREAM_BRANCH: (branch: string) => `git rev-parse --symbolic-full-name --abbrev-ref ${branch}@{upstream}`,
@@ -73,7 +83,14 @@ const getLocalCommits = async (localCommitLogsCmd: string, workspaceFolder: stri
   }
 };
 
-const hasParent = async (commitID: string, workspaceFolder: string) => {
+/**
+ * Checks if a commit has a parent commit.
+ * 
+ * @param {string} commitID - The ID of the commit to check
+ * @param {string} workspaceFolder - Path to the workspace folder
+ * @returns {Promise<boolean>} A Promise that resolves to true if the commit has a parent, false otherwise
+ */
+const hasParent = async (commitID: string, workspaceFolder: string): Promise<boolean> => {
   try {
     const output = await execGitCommand(GIT_COMMANDS.HAS_A_PARENT(commitID), workspaceFolder);
     return output.split(" ").length > 1;
@@ -82,6 +99,12 @@ const hasParent = async (commitID: string, workspaceFolder: string) => {
   }
 };
 
+/**
+ * Displays a quick pick selection UI with the list of commits.
+ * 
+ * @param {string} localCommits - String containing commit logs separated by newlines
+ * @returns {Promise<string[] | undefined>} A Promise that resolves with the selected commits or undefined if selection failed
+ */
 const showCommitSelections = async (localCommits: string): Promise<string[] | undefined> => {
   try {
     return await vscode.window.showQuickPick(localCommits.split("\n"), {
@@ -94,7 +117,13 @@ const showCommitSelections = async (localCommits: string): Promise<string[] | un
   }
 };
 
-const getCommitID = (selectedCommits: string[] | undefined) => {
+/**
+ * Extracts the commit ID from the selected commit and validates the selection.
+ * 
+ * @param {string[] | undefined} selectedCommits - Array of selected commit strings from the quick pick UI
+ * @returns {string | null} The commit ID if exactly one commit is selected, null otherwise
+ */
+const getCommitID = (selectedCommits: string[] | undefined): string | null => {
   if (!selectedCommits) {
     vscode.window.showInformationMessage("No commits are selected.");
     return null;
@@ -115,9 +144,19 @@ const getCommitID = (selectedCommits: string[] | undefined) => {
  * @param {vscode.ExtensionContext} context - The VS Code extension context
  */
 export function activate(context: vscode.ExtensionContext) {
+  console.log('Congratulations, your extension "squash-push" is now active!');
+  
   /**
-   * Command handler for the squash-push.helloWorld command.
+   * Command handler for the squash-push.squashCommits command.
    * Identifies the current branch, upstream branch, and allows selection of a base commit for squashing.
+   * The command performs the following steps:
+   * 1. Checks if a workspace folder exists
+   * 2. Verifies the user is not in a detached HEAD state
+   * 3. Gets the upstream branch if it exists
+   * 4. Retrieves local commits that haven't been pushed
+   * 5. Allows user to select a base commit for squashing
+   * 6. Verifies the selected commit has a parent
+   * 7. Performs the squash operation
    */
   const disposable = vscode.commands.registerCommand("squash-push.squashCommits", async () => {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
