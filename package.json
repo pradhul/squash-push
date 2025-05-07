@@ -14,8 +14,8 @@
   "contributes": {
     "commands": [
       {
-        "command": "squash-push.helloWorld",
-        "title": "Hello World"
+        "command": "squash-push.squashCommits",
+        "title": "Squash Local Commits"
       }
     ]
   },
