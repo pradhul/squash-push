@@ -1,6 +1,7 @@
 {
   "name": "squash-push",
   "displayName": "squash&push",
+  "publisher": "PradhulDev",
   "description": "squash the commits in local to be able to push it as a single commit",
   "version": "1.0.0",
   "engines": {
