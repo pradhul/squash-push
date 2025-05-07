@@ -11,6 +11,7 @@ A VS Code extension that simplifies Git workflow by helping developers squash mu
 - 🔄 Detects upstream branch configuration
 - 📋 Lists local commits that haven't been pushed yet
 - ✅ Interactive UI to select base commit for squashing operations
+- 🔄 Performs squash operation with a single command
 
 ![Extension Demo](images/demo.gif)
 
@@ -25,9 +26,10 @@ A VS Code extension that simplifies Git workflow by helping developers squash mu
 
 1. Open a Git repository in VS Code
 2. Open the Command Palette (Ctrl+Shift+P / Cmd+Shift+P)
-3. Type "Squash-Push: Hello World" and select the command
+3. Type "Squash Local Commits" OR "Squash-Push: Squash Local Commits" and select the command
 4. Select the oldest commit you want to keep as the base for squashing
-5. Follow the on-screen instructions
+5. The extension will squash your commits and open the commit message editor
+6. Save your new commit message and push your changes
 
 ## Requirements
 
@@ -36,9 +38,16 @@ A VS Code extension that simplifies Git workflow by helping developers squash mu
 
 ## Extension Settings
 
-This extension doesn't add any VS Code settings yet.
+This extension doesn't add any VS Code settings yet. Future versions may include:
 
+- Custom commit message templates
+- Auto-push option after squashing
+- Branch protection settings
 
+## Known Issues
+
+- Cannot squash onto the root commit (first commit in repository)
+- May encounter issues with merge commits
 
 ## Development
 
@@ -80,6 +89,9 @@ The extension provides several utility functions for Git operations:
 - `getCurrentBranch`: Gets the name of the current Git branch
 - `getCurrentUpStreamBranch`: Determines the upstream branch for the current branch
 - `getLocalCommits`: Retrieves a list of local commits
+- `hasParent`: Checks if a commit has a parent commit
+- `showCommitSelections`: Displays UI for selecting commits
+- `getCommitID`: Extracts and validates the selected commit ID
 
 For detailed API documentation, see [DOCUMENTATION.md](DOCUMENTATION.md).
 
@@ -90,6 +102,8 @@ The extension handles several error conditions:
 - Detached HEAD state
 - No local commits found
 - Multiple commits selected as base (only one is allowed)
+- Attempting to squash onto a root commit
+- Errors during the squash operation
 
 ## Contributing
 
@@ -100,6 +114,15 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 3. Commit your changes (`git commit -m 'Add some amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
+
+## Future Enhancements
+
+- Support for multiple workspace folders
+- Interactive rebase option
+- Custom commit message templates
+- Automatic push after squash
+- Branch protection rules
+- Undo squash operation
 
 ## License
 
