@@ -1,4 +1,4 @@
-import * as vscode from 'vscode';
+import * as vscode from "vscode";
 import { exec } from "child_process";
 
 const GIT_COMMANDS = {
@@ -7,6 +7,7 @@ const GIT_COMMANDS = {
   LOCAL_COMMITS: "git log --oneline",
   LOCAL_COMMITS_TRACKING: (upstreamBranch: string, branch: string) => `git log --oneline ${upstreamBranch}..${branch}`,
   SQUASH_AND_COMMIT: (commitID: string) => `git reset --soft ${commitID}~1 && git commit --amend`,
+  HAS_A_PARENT: (commitID: string) => `git rev-list --parents -n 1 ${commitID}`,
 };
 
 /**
@@ -72,16 +73,37 @@ const getLocalCommits = async (localCommitLogsCmd: string, workspaceFolder: stri
   }
 };
 
+const hasParent = async (commitID: string, workspaceFolder: string) => {
+  try {
+    const output = await execGitCommand(GIT_COMMANDS.HAS_A_PARENT(commitID), workspaceFolder);
+    return output.split(" ").length > 1;
+  } catch {
+    return false;
+  }
+};
+
+const showCommitSelections = async (localCommits: string): Promise<string[] | undefined> => {
+  try {
+    return await vscode.window.showQuickPick(localCommits.split("\n"), {
+      canPickMany: true,
+      placeHolder: "Select the oldest commit to keep as base",
+    });
+  } catch (err) {
+    console.error("An Error Occurred while showing selection window", err);
+    return;
+  }
+};
+
 const getCommitID = (selectedCommits: string[] | undefined) => {
   if (!selectedCommits) {
     vscode.window.showInformationMessage("No commits are selected.");
-    return;
+    return null;
   }
-  if (selectedCommits.length > 1) {
+  if (selectedCommits.length !== 1) {
     vscode.window.showInformationMessage(
       "You have selected more than one commits, Please select the oldest commit to keep as base"
     );
-    return;
+    return null;
   }
   return selectedCommits[0].split(" ")[0];
 };
@@ -93,13 +115,11 @@ const getCommitID = (selectedCommits: string[] | undefined) => {
  * @param {vscode.ExtensionContext} context - The VS Code extension context
  */
 export function activate(context: vscode.ExtensionContext) {
-  console.log('Congratulations, your extension "squash-push" is now active!');
-
   /**
    * Command handler for the squash-push.helloWorld command.
    * Identifies the current branch, upstream branch, and allows selection of a base commit for squashing.
    */
-  const disposable = vscode.commands.registerCommand("squash-push.helloWorld", async () => {
+  const disposable = vscode.commands.registerCommand("squash-push.squashCommits", async () => {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
     if (!workspaceFolder) {
       vscode.window.showErrorMessage("No workspace folder found.");
@@ -128,26 +148,28 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     //Show the list of commits to the user and allow selection of a base commit(selected_commit~1)
-    try {
-      const selectedCommits: string[] | undefined = await vscode.window.showQuickPick(localCommits.split("\n"), {
-        canPickMany: true,
-        placeHolder: "Select the oldest commit to keep as base",
-      });
-      const commitID = getCommitID(selectedCommits);
-      if (!commitID) {
-        return;
-      }
+    let selectedCommits: string[] | undefined;
+    selectedCommits = await showCommitSelections(localCommits);
+    const commitID = getCommitID(selectedCommits);
+    if (!commitID) {
+      return;
+    }
 
-      //Run a squash based on the last selected commit, and open the commit message to be filled by the user after
-      try {
-        execGitCommand(GIT_COMMANDS.SQUASH_AND_COMMIT(commitID), workspaceFolder);
-      } catch (err) {
-        vscode.window.showErrorMessage("An Error Occurred while squashing commits");
-        console.error("An Error Occurred while squashing", err);
-        return;
-      }
+    //check if a parent exists for the selected commit , if a squash is tried with first commit as base it will fail
+    const hasAParent = await hasParent(commitID, workspaceFolder);
+    if (!hasAParent) {
+      vscode.window.showErrorMessage("You cannot squash onto the root commit.");
+      return;
+    }
+
+    //Run a squash based on the last selected commit, and open the commit message to be filled by the user after
+    try {
+      await execGitCommand(GIT_COMMANDS.SQUASH_AND_COMMIT(commitID), workspaceFolder);
+      vscode.window.showInformationMessage("Commits squashed. You can now enter a new commit message and push.");
     } catch (err) {
-      console.error("An Error Occurred while showing selection window", err);
+      vscode.window.showErrorMessage("An Error Occurred while squashing commits");
+      console.error("An Error Occurred while squashing", err);
+      return;
     }
 
     context.subscriptions.push(disposable);
