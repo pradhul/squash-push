@@ -11,13 +11,22 @@ import { exec } from "child_process";
  * @property {Function} SQUASH_AND_COMMIT - Function that returns command to squash commits
  * @property {Function} HAS_A_PARENT - Function that returns command to check if a commit has a parent
  */
+/**
+ * Object containing Git command templates used throughout the extension.
+ * These commands are used to interact with the Git repository.
+ * 
+ * @property {string} CURRENT_BRANCH - Command to get the current branch name
+ * @property {Function} UPSTREAM_BRANCH - Function that returns command to get upstream branch
+ * @property {string} LOCAL_COMMITS - Command to get all commit logs
+ * @property {Function} LOCAL_COMMITS_TRACKING - Function that returns command to get commits between branches
+ * @property {Function} SQUASH_AND_COMMIT - Function that returns command to squash commits and open commit editor
+ */
 const GIT_COMMANDS = {
   CURRENT_BRANCH: "git symbolic-ref --short HEAD",
   UPSTREAM_BRANCH: (branch: string) => `git rev-parse --symbolic-full-name --abbrev-ref ${branch}@{upstream}`,
   LOCAL_COMMITS: "git log --oneline",
   LOCAL_COMMITS_TRACKING: (upstreamBranch: string, branch: string) => `git log --oneline ${upstreamBranch}..${branch}`,
   SQUASH_AND_COMMIT: (commitID: string) => `git reset --soft ${commitID} && git commit --amend`,
-  HAS_A_PARENT: (commitID: string) => `git rev-list --parents -n 1 ${commitID}`,
 };
 
 /**
@@ -84,22 +93,6 @@ const getLocalCommits = async (localCommitLogsCmd: string, workspaceFolder: stri
 };
 
 /**
- * Checks if a commit has a parent commit.
- *
- * @param {string} commitID - The ID of the commit to check
- * @param {string} workspaceFolder - Path to the workspace folder
- * @returns {Promise<boolean>} A Promise that resolves to true if the commit has a parent, false otherwise
- */
-const hasParent = async (commitID: string, workspaceFolder: string): Promise<boolean> => {
-  try {
-    const output = await execGitCommand(GIT_COMMANDS.HAS_A_PARENT(commitID), workspaceFolder);
-    return output.split(" ").length > 1;
-  } catch {
-    return false;
-  }
-};
-
-/**
  * Displays a quick pick selection UI with the list of commits.
  *
  * @param {string} localCommits - String containing commit logs separated by newlines
@@ -136,11 +129,19 @@ const showCommitSelection = async (localCommits: string): Promise<string | undef
   });
 };
 
+/**
+ * Creates a visual animation effect showing commits being squashed into the selected base commit.
+ * 
+ * @param {number} selectedIndex - The index of the selected commit in the commits array
+ * @param {vscode.QuickPick<vscode.QuickPickItem>} quickPick - The VS Code QuickPick UI component
+ * @param {string[]} commits - Array of commit strings
+ * @returns {void}
+ */
 const collapseAnimation = (
   selectedIndex: number,
   quickPick: vscode.QuickPick<vscode.QuickPickItem>,
   commits: string[]
-) => {
+): void => {
   // Animate collapsing the commits above the selected one
   let i = 0;
   const animationDurationPerItem = 200; // ms
@@ -155,7 +156,7 @@ const collapseAnimation = (
       };
       quickPick.items = newItems;
       i++;
-      setTimeout(animate, animationDurationPerItem); // animation step every 250ms
+      setTimeout(animate, animationDurationPerItem); // animation step every 200ms
     } else {
       quickPick.items = [
         {
@@ -187,23 +188,49 @@ const getCommitID = (selectedCommit: string | undefined): string | null => {
 };
 
 /**
+ * Generates a description for a commit based on its position in the commit history.
+ * 
+ * @param {number} index - The index of the commit in the commits array
+ * @param {string[]} commits - Array of commit strings
+ * @returns {string | undefined} A description string for the commit or undefined for commits in the middle
+ */
+function getDescription(index: number, commits: string[]): string | undefined {
+  if (index === 0) {
+    return "\t(Most recent)";
+  } else if (index === commits.length - 1) {
+    return "\t(Oldest)";
+  }
+  return undefined;
+}
+
+/**
  * Activates the extension and registers the squash-push command.
  * This is the main entry point for the extension.
  *
  * @param {vscode.ExtensionContext} context - The VS Code extension context
  */
+/**
+ * Activates the extension and registers the squash-push command.
+ * This is the main entry point for the extension.
+ * 
+ * @param {vscode.ExtensionContext} context - The VS Code extension context
+ * @returns {void}
+ */
 export function activate(context: vscode.ExtensionContext) {
+  console.log('Congratulations, your extension "squash-push" is now active!');
+
   /**
    * Command handler for the squash-push.squashCommits command.
    * Identifies the current branch, upstream branch, and allows selection of a base commit for squashing.
+   *
    * The command performs the following steps:
    * 1. Checks if a workspace folder exists
    * 2. Verifies the user is not in a detached HEAD state
    * 3. Gets the upstream branch if it exists
    * 4. Retrieves local commits that haven't been pushed
-   * 5. Allows user to select a base commit for squashing
-   * 6. Verifies the selected commit has a parent
-   * 7. Performs the squash operation
+   * 5. Allows user to select a base commit for squashing with visual animation
+   * 6. Performs the squash operation
+   * 7. Opens the commit message editor for the user to edit the final commit message
    */
   const disposable = vscode.commands.registerCommand("squash-push.squashCommits", async () => {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
@@ -241,20 +268,13 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    //check if a parent exists for the selected commit , if a squash is tried with first commit as base it will fail
-    const hasAParent = await hasParent(commitID, workspaceFolder);
-    if (!hasAParent) {
-      vscode.window.showErrorMessage("You cannot squash onto the root commit.");
-      return;
-    }
-
     //Run a squash based on the last selected commit, and open the commit message to be filled by the user after
     try {
       vscode.window.showInformationMessage(
         "Squashing commits. Edit the message or close the editor to keep the default"
       );
       await execGitCommand(GIT_COMMANDS.SQUASH_AND_COMMIT(commitID), workspaceFolder);
-      vscode.window.showInformationMessage("Commits squashed");
+      vscode.window.showInformationMessage("Commits squashed!");
     } catch (err) {
       vscode.window.showErrorMessage("An Error Occurred while squashing commits");
       console.error("An Error Occurred while squashing", err);
@@ -264,11 +284,5 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(disposable);
   });
 }
-function getDescription(index: number, commits: string[]): any {
-  if (index === 0) {
-    return "\t(Most recent)";
-  } else if (index === commits.length - 1) {
-    return "\t(Oldest)";
-  }
-}
+
 
