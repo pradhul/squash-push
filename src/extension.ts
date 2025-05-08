@@ -16,7 +16,7 @@ const GIT_COMMANDS = {
   UPSTREAM_BRANCH: (branch: string) => `git rev-parse --symbolic-full-name --abbrev-ref ${branch}@{upstream}`,
   LOCAL_COMMITS: "git log --oneline",
   LOCAL_COMMITS_TRACKING: (upstreamBranch: string, branch: string) => `git log --oneline ${upstreamBranch}..${branch}`,
-  SQUASH_AND_COMMIT: (commitID: string) => `git reset --soft ${commitID}~1 && git commit --amend`,
+  SQUASH_AND_COMMIT: (commitID: string) => `git reset --soft ${commitID} && git commit --amend`,
   HAS_A_PARENT: (commitID: string) => `git rev-list --parents -n 1 ${commitID}`,
 };
 
@@ -112,6 +112,7 @@ const showCommitSelection = async (localCommits: string): Promise<string | undef
       const quickPick = vscode.window.createQuickPick();
       quickPick.canSelectMany = false;
       quickPick.title = "Select the oldest commit to keep as base";
+      quickPick.placeholder = "Select the base commit — commits after this will be squashed into it";
       quickPick.items = commits.map((commit, index, commits) => ({
         label: `$(git-commit) Commit: ${commit}`,
         description: getDescription(index, commits),
@@ -120,7 +121,8 @@ const showCommitSelection = async (localCommits: string): Promise<string | undef
 
       quickPick.onDidAccept(() => {
         const selectedItem = quickPick.selectedItems[0];
-        quickPick.hide();
+        const selectedIndex = quickPick.items.findIndex((item) => item.label === selectedItem.label);
+        collapseAnimation(selectedIndex, quickPick, commits);
         resolve(selectedItem.label);
       });
 
@@ -132,6 +134,43 @@ const showCommitSelection = async (localCommits: string): Promise<string | undef
       resolve("");
     }
   });
+};
+
+const collapseAnimation = (
+  selectedIndex: number,
+  quickPick: vscode.QuickPick<vscode.QuickPickItem>,
+  commits: string[]
+) => {
+  // Animate collapsing the commits above the selected one
+  let i = 0;
+  const animationDurationPerItem = 200; // ms
+  const totalDuration = commits.length * animationDurationPerItem;
+
+  const animate = () => {
+    if (i < selectedIndex) {
+      const newItems = [...quickPick.items];
+      newItems[i] = {
+        label: `$(arrow-down) ${commits[i]}`,
+        description: "Squashing...",
+      };
+      quickPick.items = newItems;
+      i++;
+      setTimeout(animate, animationDurationPerItem); // animation step every 250ms
+    } else {
+      quickPick.items = [
+        {
+          label: `$(check) ${commits[selectedIndex]}`,
+          description: "Final base commit",
+        },
+      ];
+      setTimeout(() => {
+        quickPick.hide();
+        vscode.window.showInformationMessage(`Ready to squash above: ${commits[selectedIndex]}`);
+      }, totalDuration);
+    }
+  };
+
+  animate();
 };
 
 /**
@@ -194,7 +233,7 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    //Show the list of commits to the user and allow selection of a base commit(selected_commit~1)
+    //Show the list of commits to the user and allow selection of a base commit(selected_commit)
     let selectedCommit: string | undefined;
     selectedCommit = await showCommitSelection(localCommits);
     const commitID = getCommitID(selectedCommit);
@@ -211,6 +250,9 @@ export function activate(context: vscode.ExtensionContext) {
 
     //Run a squash based on the last selected commit, and open the commit message to be filled by the user after
     try {
+      vscode.window.showInformationMessage(
+        "Squashing commits. Edit the message or close the editor to keep the default"
+      );
       await execGitCommand(GIT_COMMANDS.SQUASH_AND_COMMIT(commitID), workspaceFolder);
       vscode.window.showInformationMessage("Commits squashed");
     } catch (err) {
