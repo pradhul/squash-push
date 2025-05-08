@@ -4,7 +4,7 @@
   "publisher": "PradhulDev",
   "icon": "icon.png",
   "description": "squash the commits in local to be able to push it as a single commit",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "engines": {
     "vscode": "^1.99.0"
   },

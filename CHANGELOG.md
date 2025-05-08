@@ -43,4 +43,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Interactive rebase option
 - Custom commit message templates
 - Branch protection rules
+- Squash pushed commits
 - Undo squash operation
