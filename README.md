@@ -13,7 +13,7 @@ A VS Code extension that simplifies Git workflow by helping developers squash mu
 - ✅ Interactive UI to select base commit for squashing operations
 - 🔄 Performs squash operation with a single command
 
-![Extension Demo](images/demo.gif)
+![Extension Demo](recording.gif)
 
 ## Installation
 
