@@ -29,7 +29,7 @@ const GIT_COMMANDS = {
  */
 function execGitCommand(command: string, cwd: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    exec(command, { cwd }, (error, stdout, stderr) => {
+    exec(command, { cwd, env: { ...process.env, EDITOR: "code --wait" } }, (error, stdout, stderr) => {
       if (error) {
         reject(stderr || error.message);
         return;
@@ -85,7 +85,7 @@ const getLocalCommits = async (localCommitLogsCmd: string, workspaceFolder: stri
 
 /**
  * Checks if a commit has a parent commit.
- * 
+ *
  * @param {string} commitID - The ID of the commit to check
  * @param {string} workspaceFolder - Path to the workspace folder
  * @returns {Promise<boolean>} A Promise that resolves to true if the commit has a parent, false otherwise
@@ -101,40 +101,50 @@ const hasParent = async (commitID: string, workspaceFolder: string): Promise<boo
 
 /**
  * Displays a quick pick selection UI with the list of commits.
- * 
+ *
  * @param {string} localCommits - String containing commit logs separated by newlines
  * @returns {Promise<string[] | undefined>} A Promise that resolves with the selected commits or undefined if selection failed
  */
-const showCommitSelections = async (localCommits: string): Promise<string[] | undefined> => {
-  try {
-    return await vscode.window.showQuickPick(localCommits.split("\n"), {
-      canPickMany: true,
-      placeHolder: "Select the oldest commit to keep as base",
-    });
-  } catch (err) {
-    console.error("An Error Occurred while showing selection window", err);
-    return;
-  }
+const showCommitSelection = async (localCommits: string): Promise<string | undefined> => {
+  const commits: string[] = localCommits.split("\n");
+  return new Promise((resolve, reject) => {
+    try {
+      const quickPick = vscode.window.createQuickPick();
+      quickPick.canSelectMany = false;
+      quickPick.title = "Select the oldest commit to keep as base";
+      quickPick.items = commits.map((commit, index, commits) => ({
+        label: `$(git-commit) Commit: ${commit}`,
+        description: getDescription(index, commits),
+      }));
+      quickPick.show();
+
+      quickPick.onDidAccept(() => {
+        const selectedItem = quickPick.selectedItems[0];
+        quickPick.hide();
+        resolve(selectedItem.label);
+      });
+
+      quickPick.onDidHide(() => {
+        quickPick.dispose();
+        resolve("");
+      });
+    } catch {
+      resolve("");
+    }
+  });
 };
 
 /**
  * Extracts the commit ID from the selected commit and validates the selection.
- * 
- * @param {string[] | undefined} selectedCommits - Array of selected commit strings from the quick pick UI
+ *
+ * @param {string[] | undefined} selectedCommit - Array of selected commit strings from the quick pick UI
  * @returns {string | null} The commit ID if exactly one commit is selected, null otherwise
  */
-const getCommitID = (selectedCommits: string[] | undefined): string | null => {
-  if (!selectedCommits) {
-    vscode.window.showInformationMessage("No commits are selected.");
+const getCommitID = (selectedCommit: string | undefined): string | null => {
+  if (!selectedCommit) {
     return null;
   }
-  if (selectedCommits.length !== 1) {
-    vscode.window.showInformationMessage(
-      "You have selected more than one commits, Please select the oldest commit to keep as base"
-    );
-    return null;
-  }
-  return selectedCommits[0].split(" ")[0];
+  return selectedCommit.split(" ")[2];
 };
 
 /**
@@ -144,8 +154,6 @@ const getCommitID = (selectedCommits: string[] | undefined): string | null => {
  * @param {vscode.ExtensionContext} context - The VS Code extension context
  */
 export function activate(context: vscode.ExtensionContext) {
-  console.log('Congratulations, your extension "squash-push" is now active!');
-  
   /**
    * Command handler for the squash-push.squashCommits command.
    * Identifies the current branch, upstream branch, and allows selection of a base commit for squashing.
@@ -187,9 +195,9 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     //Show the list of commits to the user and allow selection of a base commit(selected_commit~1)
-    let selectedCommits: string[] | undefined;
-    selectedCommits = await showCommitSelections(localCommits);
-    const commitID = getCommitID(selectedCommits);
+    let selectedCommit: string | undefined;
+    selectedCommit = await showCommitSelection(localCommits);
+    const commitID = getCommitID(selectedCommit);
     if (!commitID) {
       return;
     }
@@ -204,7 +212,7 @@ export function activate(context: vscode.ExtensionContext) {
     //Run a squash based on the last selected commit, and open the commit message to be filled by the user after
     try {
       await execGitCommand(GIT_COMMANDS.SQUASH_AND_COMMIT(commitID), workspaceFolder);
-      vscode.window.showInformationMessage("Commits squashed. You can now enter a new commit message and push.");
+      vscode.window.showInformationMessage("Commits squashed");
     } catch (err) {
       vscode.window.showErrorMessage("An Error Occurred while squashing commits");
       console.error("An Error Occurred while squashing", err);
@@ -214,3 +222,11 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(disposable);
   });
 }
+function getDescription(index: number, commits: string[]): any {
+  if (index === 0) {
+    return "\t(Most recent)";
+  } else if (index === commits.length - 1) {
+    return "\t(Oldest)";
+  }
+}
+
