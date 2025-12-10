@@ -1,5 +1,8 @@
 import * as vscode from "vscode";
 import { exec } from "child_process";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 
 /**
  * Object containing Git command templates used throughout the extension.
@@ -188,6 +191,14 @@ const getCommitID = (selectedCommit: string | undefined): string | null => {
 };
 
 /**
+ * Escape a message to be safely embedded in a double-quoted shell argument.
+ * This escapes backslashes and double quotes.
+ */
+const escapeForDoubleQuotedShell = (s: string): string => {
+  return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+};
+
+/**
  * Generates a description for a commit based on its position in the commit history.
  * 
  * @param {number} index - The index of the commit in the commits array
@@ -268,13 +279,73 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    //Run a squash based on the last selected commit, and open the commit message to be filled by the user after
+    // Ask the user which flavor they want: squash (preserve messages) or fixup (amend)
+    const flavor = await vscode.window.showQuickPick([
+      { label: "squash", description: "Preserve all commit messages into the final commit (editable)" },
+      { label: "fixup", description: "Amend base commit (drop other messages)" },
+    ], { placeHolder: "Choose squash flavor" });
+
+    // Run a squash based on the selected base commit and include messages from squashed commits
     try {
-      vscode.window.showInformationMessage(
-        "Squashing commits. Edit the message or close the editor to keep the default"
-      );
-      await execGitCommand(GIT_COMMANDS.SQUASH_AND_COMMIT(commitID), workspaceFolder);
-      vscode.window.showInformationMessage("Commits squashed!");
+      if (!flavor) {
+        return;
+      }
+
+      vscode.window.showInformationMessage("Squashing commits. Preparing the chosen flavor...");
+
+      const commitsArray = localCommits.split("\n");
+      const baseIndex = commitsArray.findIndex((c) => c.startsWith(commitID));
+
+      // Determine subject (base commit message) and body (messages from commits that will be squashed)
+      let subject = "";
+      let body = "";
+      if (baseIndex !== -1) {
+        const baseLine = commitsArray[baseIndex];
+        subject = baseLine.split(" ").slice(1).join(" ");
+
+        const squashedMessages: string[] = [];
+        for (let i = 0; i < baseIndex; i++) {
+          const line = commitsArray[i];
+          const msg = line.split(" ").slice(1).join(" ");
+          if (msg) squashedMessages.push(msg);
+        }
+
+        if (squashedMessages.length) {
+          body = `Squashed commits:\n\n${squashedMessages.map((m) => `- ${m}`).join("\n")}`;
+        }
+      }
+
+      if (flavor.label === "squash") {
+        // Prepare a temp file with the combined message and open editor pre-populated
+        const tmpDir = os.tmpdir();
+        const tmpFile = path.join(tmpDir, `squash-msg-${Date.now()}.txt`);
+        const combined = `${subject || ""}\n\n${body || ""}`.trim();
+        fs.writeFileSync(tmpFile, combined, { encoding: "utf8" });
+
+        // Use a GIT_EDITOR that first copies our tmp file into the provided path and then opens VS Code to edit it
+        // The shell command receives the commit message file path as $1
+        const safeTmpFile = tmpFile.replace(/"/g, '\\"');
+        const gitCmd =
+          'git reset --soft ' +
+          commitID +
+          ' && GIT_EDITOR=\'sh -c "cat "' +
+          safeTmpFile +
+          '" > \"$1\"; code --wait \"$1\""\' git commit --amend';
+
+        try {
+          await execGitCommand(gitCmd, workspaceFolder);
+          vscode.window.showInformationMessage("Commits squashed (messages preserved).");
+        } finally {
+          try {
+            fs.unlinkSync(tmpFile);
+          } catch {}
+        }
+      } else {
+        // Fixup flavor: simply reset soft to base and open editor to amend (no automatic body merging)
+        const gitCmd = `git reset --soft ${commitID} && git commit --amend`;
+        await execGitCommand(gitCmd, workspaceFolder);
+        vscode.window.showInformationMessage("Commits squashed with fixup flavor (amended).");
+      }
     } catch (err) {
       vscode.window.showErrorMessage("An Error Occurred while squashing commits");
       console.error("An Error Occurred while squashing", err);
